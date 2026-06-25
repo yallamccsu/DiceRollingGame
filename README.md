@@ -1,25 +1,35 @@
-# Dice Rolling Game (Simulated Players)
+# Two-Player Dice Game Engine
 
-This Python project simulates a simple dice game between two players. Each round, both players roll a six-sided die. The game runs for a number of rounds specified by the user, keeps score, and announces the overall winner at the end.
+A Python-based simulation engine for a two-player dice competition. 
+Tracks round-by-round outcomes, win streaks, and roll frequency across 
+a full session, then generates a structured post-game report.
 
 ## Features
 
-- Simulates random dice rolls using Python's `random` module
-- Allows the user to choose how many rounds to play
-- Prints each round's outcome and updates the score
-- Declares a final winner or tie at the end
+- Simulates any number of rounds between two players
+- Tracks wins, losses, and ties across the full session
+- Computes each player's longest consecutive win streak
+- Records roll frequency and identifies each player's most rolled value
+- Full input validation with clean error handling
+- Post-game summary report printed automatically at session end
 
 ## How to Run
 
-1. Make sure Python is installed on your system.
-2. Download or clone this repository.
-3. Open a terminal or command prompt in the folder where `dice_rolling_game.py` is located.
-4. Run the program using:
+```bash
+python Yusuf_Allam_IA7.py
+```
 
-## What I Learned
+You will be prompted to enter the number of rounds. Results are printed 
+round by round, followed by a full breakdown at the end.
 
-- How to simulate dice rolls using `random.randint()`
-- Writing and calling functions to organize program logic
-- Comparing values to determine a winner or tie
-- Keeping track of scores with variables
-- Structuring a loop to play multiple game rounds
+## Technical Highlights
+
+- `DieVariant` enum makes the die size swappable in one line
+- `RoundRecord` dataclass captures the full state of each roll
+- `GameReport` auto-computes all stats on initialization
+- Isolated RNG via `random.Random` for reproducible results with optional seeding
+- Separated rendering logic keeps the engine clean and independently testable
+
+## Tech Stack
+
+Python 3 | dataclasses | enums | functools | collections
