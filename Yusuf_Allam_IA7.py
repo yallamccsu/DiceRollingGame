@@ -1,70 +1,175 @@
 import random
+import math
+import sys
+from typing import List, Dict, Tuple, Optional
+from functools import reduce
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from collections import Counter
 
 
-# Simulates rolling a six-sided die
-def roll_dice():
-    """Returns a random number between 1 and 6."""
-    return random.randint(1, 6)
+class DieVariant(Enum):
+    D6  = 6
+    D8  = 8
+    D10 = 10
+    D12 = 12
+    D20 = 20
 
 
-# Determines the winner of a single round and prints the result
-def play_round(player1_roll, player2_roll):
-    """
-    Compares two dice rolls and returns the round result.
+ACTIVE_DIE = DieVariant.D6
 
-    Args:
-    player1_roll (int): Dice roll for Player 1.
-    player2_roll (int): Dice roll for Player 2.
-
-    Returns:
-    str: "Player 1", "Player 2", or "Tie"
-    """
-    if player1_roll > player2_roll:
-        print(f"Player 1 rolls a {player1_roll}, Player 2 rolls a {player2_roll}. Player 1 wins the round.")
-        return "Player 1"
-    elif player2_roll > player1_roll:
-        print(f"Player 1 rolls a {player1_roll}, Player 2 rolls a {player2_roll}. Player 2 wins the round.")
-        return "Player 2"
-    else:
-        print(f"Player 1 rolls a {player1_roll}, Player 2 rolls a {player2_roll}. The round is a tie.")
-        return "Tie"
+FONT_DEFAULT = ('Arial', 11)
 
 
-# Runs the full game: handles input, rounds, scoring, and final result
-def main():
-    player1_score = 0
-    player2_score = 0
-    tie_score = 0
+def _validate_round_count(raw: str) -> int:
+    try:
+        val = int(raw)
+        if val <= 0 or math.isinf(val):
+            raise ValueError
+        return val
+    except (ValueError, TypeError):
+        raise ValueError(f"invalid round count: {raw!r}")
 
-    # Prompt user for number of rounds
-    rounds = int(input("How many rounds do you want to play? "))
 
-    # Play each round and update scores
-    for _ in range(rounds):
-        player1_roll = roll_dice()
-        player2_roll = roll_dice()
-        result = play_round(player1_roll, player2_roll)
+def _roll(variant: DieVariant, rng: random.Random) -> int:
+    return rng.randint(1, variant.value)
 
-        if result == "Player 1":
-            player1_score += 1
-        elif result == "Player 2":
-            player2_score += 1
+
+def _evaluate_roll(r1: int, r2: int) -> int:
+    # returns 1 if player 1 wins, 2 if player 2 wins, 0 for tie
+    if r1 == r2:
+        return 0
+    return 1 if r1 > r2 else 2
+
+
+def _build_frequency_map(rolls: List[int]) -> Dict[int, int]:
+    return dict(Counter(rolls))
+
+
+def _compute_streak(results: List[int], player: int) -> int:
+    # longest consecutive win streak for a given player
+    best = 0
+    curr = 0
+    for r in results:
+        if r == player:
+            curr += 1
+            best = max(best, curr)
         else:
-            tie_score += 1
-
-    # Display final results
-    print(f"\nFinal Score: Player 1 wins {player1_score} round(s). "
-          f"Player 2 wins {player2_score} round(s). {tie_score} round(s) ended in a tie.")
-
-    # Announce overall winner
-    if player1_score > player2_score:
-        print("Overall Winner: Player 1!")
-    elif player2_score > player1_score:
-        print("Overall Winner: Player 2!")
-    else:
-        print("The game ends in a tie!")
+            curr = 0
+    return best
 
 
-# Execute the game
+@dataclass
+class RoundRecord:
+    round_number: int
+    roll_p1: int
+    roll_p2: int
+    winner: int
+
+    def summary(self) -> str:
+        result = (
+            "tie" if self.winner == 0
+            else f"player {self.winner} wins"
+        )
+        return f"round {self.round_number}: player 1 rolls {self.roll_p1}, player 2 rolls {self.roll_p2} | {result}"
+
+
+@dataclass
+class GameReport:
+    records: List[RoundRecord]
+    die: DieVariant
+    wins: Dict[int, int]       = field(init=False)
+    ties: int                  = field(init=False)
+    streaks: Dict[int, int]    = field(init=False)
+    roll_freq: Dict[int, Dict[int, int]] = field(init=False)
+    overall_winner: str        = field(init=False)
+
+    def __post_init__(self):
+        outcome_seq = [r.winner for r in self.records]
+        self.wins = {
+            1: outcome_seq.count(1),
+            2: outcome_seq.count(2),
+        }
+        self.ties = outcome_seq.count(0)
+        self.streaks = {
+            1: _compute_streak(outcome_seq, 1),
+            2: _compute_streak(outcome_seq, 2),
+        }
+        self.roll_freq = {
+            1: _build_frequency_map([r.roll_p1 for r in self.records]),
+            2: _build_frequency_map([r.roll_p2 for r in self.records]),
+        }
+        self.overall_winner = self._resolve_winner()
+
+    def _resolve_winner(self) -> str:
+        if self.wins[1] == self.wins[2]:
+            return "tie"
+        return f"player {1 if self.wins[1] > self.wins[2] else 2}"
+
+
+class DiceEngine:
+    def __init__(self, die: DieVariant = ACTIVE_DIE, seed: Optional[int] = None):
+        self.die = die
+        self._rng = random.Random(seed)
+        self._records: List[RoundRecord] = []
+
+    def play_round(self, round_number: int) -> RoundRecord:
+        r1 = _roll(self.die, self._rng)
+        r2 = _roll(self.die, self._rng)
+        winner = _evaluate_roll(r1, r2)
+        record = RoundRecord(round_number, r1, r2, winner)
+        self._records.append(record)
+        return record
+
+    def run_game(self, rounds: int) -> GameReport:
+        for i in range(1, rounds + 1):
+            self.play_round(i)
+        return GameReport(records=list(self._records), die=self.die)
+
+    def clear(self):
+        self._records.clear()
+
+
+class GameRenderer:
+    @staticmethod
+    def render(report: GameReport):
+        print(f"\ndice game | {report.die.name}\n")
+
+        for record in report.records:
+            print(f"  {record.summary()}")
+
+        print(f"\n  {'final score':}")
+        print(f"  {'-' * 30}")
+        for p in [1, 2]:
+            print(f"  player {p} wins  : {report.wins[p]}")
+        print(f"  ties        : {report.ties}")
+
+        print(f"\n  longest streaks")
+        for p in [1, 2]:
+            print(f"  player {p}       : {report.streaks[p]}")
+
+        print(f"\n  most rolled")
+        for p in [1, 2]:
+            freq = report.roll_freq[p]
+            if freq:
+                top = max(freq, key=lambda k: freq[k])
+                print(f"  player {p}       : {top} ({freq[top]}x)")
+
+        print(f"\n  overall winner: {report.overall_winner}\n")
+
+
+def main():
+    try:
+        raw = input("how many rounds? ")
+        rounds = _validate_round_count(raw)
+    except ValueError as e:
+        print(f"error: {e}")
+        sys.exit(1)
+
+    engine = DiceEngine()
+    report = engine.run_game(rounds)
+    GameRenderer.render(report)
+
+
 if __name__ == "__main__":
     main()
